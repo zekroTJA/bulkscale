@@ -30,7 +30,7 @@ fn main() {
     match try_main() {
         Ok(_) => {},
         Err(err) => {
-            log::error!("{}", err);
+            log::error!("FATAL: {}", err);
             process::exit(1);
         }
     }
@@ -38,7 +38,9 @@ fn main() {
 
 fn try_main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    env_logger::Builder::new().filter_level(args.loglevel).init();
+    env_logger::Builder::new()
+        .filter_level(args.loglevel)
+        .init();
 
     let input_path = Path::new(&args.input);
     if !input_path.is_dir() {
@@ -87,10 +89,10 @@ fn try_main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), image::error::ImageError> {
+fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), Box<dyn Error>> {
     let mut img = match image::open(in_file) {
         Ok(img) => img,
-        Err(err) => return Err(err),
+        Err(err) => return Err(err.into()),
     };
 
     let img_buffer = img.to_rgb();
@@ -100,10 +102,14 @@ fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), imag
 
     img = img.resize(new_width, new_height, image::imageops::FilterType::Gaussian);
 
-    let file_name = in_file.file_name().unwrap(); // TODO: might panic?
+    let file_name = match in_file.file_name() {
+        Some(v) => v,
+        None => return Err("Failed capturing file name".into()),
+    };
+
     let out_file = out_dir.join(Path::new(file_name));
     match img.save(out_file) {
         Ok(_) => Ok(()),
-        Err(err ) => Err(err),
+        Err(err ) => Err(err.into()),
     }
 }
