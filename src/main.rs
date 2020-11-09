@@ -1,5 +1,8 @@
+mod utils;
+
 use log;
 use image;
+use image::imageops::FilterType;
 use std::{fs, process, path::Path, error::Error};
 use clap::Clap;
 use threadpool::ThreadPool;
@@ -21,6 +24,9 @@ struct Args {
 
     #[clap(long, about = "Ammount of workers in the worker pool", default_value = "5")]
     workers: usize,
+
+    #[clap(long, about = "Ammount of workers in the worker pool", default_value = "triangle")]
+    filter: String,
 }
 
 fn main() {
@@ -38,6 +44,11 @@ fn try_main() -> Result<(), Box<dyn Error>> {
     env_logger::Builder::new()
         .filter_level(args.loglevel)
         .init();
+
+    let filter_type = match utils::filtertype_fromstr(&args.filter) {
+        Ok(v) => v,
+        Err(err) => return Err(err),
+    };
 
     let input_path = Path::new(&args.input);
     if !input_path.is_dir() {
@@ -87,7 +98,7 @@ fn try_main() -> Result<(), Box<dyn Error>> {
         let output = args.output.to_owned();
         pool.execute(move || {
             let out_dir = Path::new(&output);
-            match process_image(&in_file, &out_dir, &scale) {
+            match process_image(&in_file, &out_dir, &scale, &filter_type) {
                 Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
                 Err(err) => {
                     log::error!("Failed getting entry: {}", err);
@@ -101,7 +112,7 @@ fn try_main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), Box<dyn Error>> {
+fn process_image(in_file: &Path, out_dir: &Path, scale: &f32, filter_type: &FilterType) -> Result<(), Box<dyn Error>> {
     let mut img = match image::open(in_file) {
         Ok(img) => img,
         Err(err) => return Err(err.into()),
@@ -112,7 +123,7 @@ fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), Box<
     let new_width = (img_buffer.width() as f32 * scale) as u32;
     let new_height = (img_buffer.height() as f32 * scale) as u32;
 
-    img = img.resize(new_width, new_height, image::imageops::FilterType::Gaussian);
+    img = img.resize(new_width, new_height, *filter_type);
 
     let file_name = match in_file.file_name() {
         Some(v) => v,
