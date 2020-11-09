@@ -1,14 +1,8 @@
-use std::{fs, process, path::Path, error::Error};
-use clap::Clap;
 use log;
 use image;
-
-macro_rules! fatal {
-    ( $( $v:expr ),+ )  => {
-        log::error!( $( $v ),+ );
-        process::exit(1);
-    }
-}
+use std::{fs, process, path::Path, error::Error};
+use clap::Clap;
+use threadpool::ThreadPool;
 
 #[derive(Clap)]
 #[clap(version = "0.1", author = "zekro <contact@zekro.de>")]
@@ -24,6 +18,9 @@ struct Args {
 
     #[clap(long, about = "Log level", default_value = "info")]
     loglevel: log::LevelFilter,
+
+    #[clap(long, about = "Ammount of workers in the worker pool", default_value = "5")]
+    workers: usize,
 }
 
 fn main() {
@@ -44,7 +41,7 @@ fn try_main() -> Result<(), Box<dyn Error>> {
 
     let input_path = Path::new(&args.input);
     if !input_path.is_dir() {
-        fatal!("Given input path is not a directory");
+        return Err("Input path is no valid directory".into());
     }
 
     let dirs = match fs::read_dir(&input_path) {
@@ -52,8 +49,17 @@ fn try_main() -> Result<(), Box<dyn Error>> {
         Err(err) => return Err(Box::new(err)),
     };
 
-    let out_dir = Path::new(&args.output);
     let in_dir = Path::new(&args.input);
+    let out_dir = Path::new(&args.output);
+
+    if !out_dir.exists() {
+        match fs::create_dir_all(out_dir) {
+            Ok(_) => log::info!("Output dir created"),
+            Err(err) => return Err(Box::new(err)),
+        }
+    }
+
+    let pool = ThreadPool::new( args.workers);
 
     for entry in dirs {
         let entry = match entry {
@@ -76,15 +82,21 @@ fn try_main() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
+        let scale = args.scale;
         let in_file = in_dir.join(Path::new(&entry.file_name()));
-        match process_image(&in_file, &out_dir, &args.scale) {
-            Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
-            Err(err) => {
-                log::error!("Failed getting entry: {}", err);
-                continue;
-            },
-        }
+        let output = args.output.to_owned();
+        pool.execute(move || {
+            let out_dir = Path::new(&output);
+            match process_image(&in_file, &out_dir, &scale) {
+                Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
+                Err(err) => {
+                    log::error!("Failed getting entry: {}", err);
+                },
+            }
+        });
     }
+
+    pool.join();
 
     Ok(())
 }
