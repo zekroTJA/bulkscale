@@ -1,4 +1,4 @@
-use std::{fs, process, path::Path};
+use std::{fs, process, path::Path, error::Error};
 use clap::Clap;
 use log;
 use image;
@@ -21,44 +21,70 @@ struct Args {
 
     #[clap(short, long, about = "The directory of the output data", default_value = "output")]
     output: String,
+
+    #[clap(long, about = "Log level", default_value = "info")]
+    loglevel: log::LevelFilter,
 }
 
 fn main() {
-    env_logger::init();
-    
+    match try_main() {
+        Ok(_) => {},
+        Err(err) => {
+            log::error!("{}", err);
+            process::exit(1);
+        }
+    }
+}
+
+fn try_main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
+    env_logger::Builder::new().filter_level(args.loglevel).init();
 
     let input_path = Path::new(&args.input);
     if !input_path.is_dir() {
         fatal!("Given input path is not a directory");
     }
 
-    let dirs = fs::read_dir(&input_path)
-        .map_err(fatal_map)
-        .unwrap();
+    let dirs = match fs::read_dir(&input_path) {
+        Ok(v) => v,
+        Err(err) => return Err(Box::new(err)),
+    };
 
     let out_dir = Path::new(&args.output);
     let in_dir = Path::new(&args.input);
 
     for entry in dirs {
-        match entry {
-            Err(e) => log::error!("Failed getting entry: {}", e),
-            Ok(entry) => {
-                match entry.file_type() {
-                    Err(e) => log::error!("Failed getting file type: {}", e),
-                    Ok(typ) => {
-                        if typ.is_file() {
-                            let in_file = in_dir.join(Path::new(&entry.file_name()));
-                            match process_image(&in_file, &out_dir, &args.scale) {
-                                Err(e) => log::error!("Failed processing image: {}", e),
-                                Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
-                            }
-                        }
-                    }
-                }
+        let entry = match entry {
+            Ok(v) => v,
+            Err(err) => {
+                log::error!("Failed getting entry: {}", err);
+                continue;
+            },
+        };
+
+        let file_type = match entry.file_type() {
+            Ok(v) => v,
+            Err(err) => {
+                log::error!("Failed getting file type: {}", err);
+                continue;
+            },
+        };
+
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let in_file = in_dir.join(Path::new(&entry.file_name()));
+        match process_image(&in_file, &out_dir, &args.scale) {
+            Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
+            Err(err) => {
+                log::error!("Failed getting entry: {}", err);
+                continue;
             },
         }
     }
+
+    Ok(())
 }
 
 fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), image::error::ImageError> {
@@ -80,8 +106,4 @@ fn process_image(in_file: &Path, out_dir: &Path, scale: &f32) -> Result<(), imag
         Ok(_) => Ok(()),
         Err(err ) => Err(err),
     }
-}
-
-fn fatal_map(e: std::io::Error) {
-    fatal!("{}", e);
 }
