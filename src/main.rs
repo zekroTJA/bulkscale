@@ -25,7 +25,7 @@ struct Args {
     #[clap(long, about = "Ammount of workers in the worker pool", default_value = "5")]
     workers: usize,
 
-    #[clap(long, about = "Ammount of workers in the worker pool", default_value = "triangle")]
+    #[clap(long, about = "The filter used to scale the images", default_value = "triangle")]
     filter: String,
 }
 
@@ -98,7 +98,7 @@ fn try_main() -> Result<(), Box<dyn Error>> {
         let output = args.output.to_owned();
         pool.execute(move || {
             let out_dir = Path::new(&output);
-            match process_image(&in_file, &out_dir, &scale, &filter_type) {
+            match process_image(&in_file, out_dir, &scale, &filter_type) {
                 Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
                 Err(err) => {
                     log::error!("Failed getting entry: {}", err);
