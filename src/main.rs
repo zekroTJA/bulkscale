@@ -143,8 +143,8 @@ fn process_image(
             (img_buffer.height() as f32 * s) as u32,
         ),
         None => (
-            width.unwrap_or(0),
-            height.unwrap_or(0),
+            width.unwrap_or(u32::MAX),
+            height.unwrap_or(u32::MAX),
         ),
     };
 
