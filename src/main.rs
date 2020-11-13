@@ -11,7 +11,13 @@ use threadpool::ThreadPool;
 #[clap(version = "0.1", author = "zekro <contact@zekro.de>")]
 struct Args {
     #[clap(short, long, about = "The scale of the results")]
-    scale: f32,
+    scale: Option<f32>,
+
+    #[clap(short, long, about = "The width of the results in px")]
+    width: Option<u32>,
+
+    #[clap(short, long, about = "The height of the results in px")]
+    height: Option<u32>,
 
     #[clap(short, long, about = "The directory of the input data", default_value = ".")]
     input: String,
@@ -44,6 +50,10 @@ fn try_main() -> Result<(), Box<dyn Error>> {
     env_logger::Builder::new()
         .filter_level(args.loglevel)
         .init();
+
+    if args.scale.is_none() && args.width.is_none() && args.height.is_none() {
+        return Err("Either a scale or an absolute with or height must be given".into());
+    }
 
     let filter_type = match utils::filtertype_fromstr(&args.filter) {
         Ok(v) => v,
@@ -93,12 +103,12 @@ fn try_main() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        let scale = args.scale;
+        let (scale, width, height) = (args.scale, args.width, args.height);
         let in_file = in_dir.join(Path::new(&entry.file_name()));
         let output = args.output.to_owned();
         pool.execute(move || {
             let out_dir = Path::new(&output);
-            match process_image(&in_file, out_dir, &scale, &filter_type) {
+            match process_image(&in_file, out_dir, &scale, &width, &height, &filter_type) {
                 Ok(_) => log::info!("Processed image {:#?}", in_file.into_os_string()),
                 Err(err) => {
                     log::error!("Failed getting entry: {}", err);
@@ -112,7 +122,14 @@ fn try_main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn process_image(in_file: &Path, out_dir: &Path, scale: &f32, filter_type: &FilterType) -> Result<(), Box<dyn Error>> {
+fn process_image(
+    in_file: &Path, 
+    out_dir: &Path, 
+    scale: &Option<f32>,
+    width: &Option<u32>,
+    height: &Option<u32>,
+    filter_type: &FilterType
+) -> Result<(), Box<dyn Error>> {
     let mut img = match image::open(in_file) {
         Ok(img) => img,
         Err(err) => return Err(err.into()),
@@ -120,8 +137,16 @@ fn process_image(in_file: &Path, out_dir: &Path, scale: &f32, filter_type: &Filt
 
     let img_buffer = img.to_rgb();
 
-    let new_width = (img_buffer.width() as f32 * scale) as u32;
-    let new_height = (img_buffer.height() as f32 * scale) as u32;
+    let (new_width, new_height) = match scale {
+        Some(s) => (
+            (img_buffer.width() as f32 * s) as u32,
+            (img_buffer.height() as f32 * s) as u32,
+        ),
+        None => (
+            width.unwrap_or(0),
+            height.unwrap_or(0),
+        ),
+    };
 
     img = img.resize(new_width, new_height, *filter_type);
 
